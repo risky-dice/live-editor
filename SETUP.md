@@ -22,11 +22,17 @@ claude plugin marketplace add risky-dice/claude-setup && claude plugin install j
 
 ```bash
 mkdir -p ~/live-editor-work && cp <skill-dir>/scripts/* ~/live-editor-work/
-cd ~/live-editor-work && npm install && pip install pymupdf --break-system-packages
+cd ~/live-editor-work && npm install
+python3 -m venv .venv && .venv/bin/pip install pymupdf   # pdf 편집용
 ```
 
-node·npm·pip가 없거나 설치 권한이 막힌 기계에서는 **스킬은 보이는데 실행이 실패한다.**
-버전 고정 필수 — `@rhwp/core`를 `^`로 풀면 렌더링이 깨진다.
+**관리자 권한이 필요한 곳은 없다.** npm은 `~/live-editor-work/node_modules` 에,
+파이썬 의존성은 venv 안에 깔린다. SKILL.md 의 `pip install --break-system-packages`
+는 시스템 파이썬에 직접 쓰는 플래그라 권한이 필요하니 venv 를 쓴다.
+
+**진짜 막히는 경우는 Node.js 나 파이썬 자체가 없을 때다.** 런타임을 새로 까는 것이
+관리자 권한이고, 그 경우 live-editor 는 우회로가 없다. 버전 고정 필수 —
+`@rhwp/core` 를 `^` 로 풀면 렌더링이 깨진다.
 
 **2. 설치 권한 없는 학교 노트북의 jeongsan.**
 플러그인 설치 대신 릴리스에서 단일 파일만 받는다.

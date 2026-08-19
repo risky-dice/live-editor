@@ -1,6 +1,15 @@
 # 새 노트북 세팅
 
-한 줄로 끝난다:
+## 선행 조건 (기계당 한 번)
+
+`gh auth login` 후 아래 한 줄. 플러그인 설치기가 `git@github.com:`(SSH)로 클론하는데
+SSH 키가 없으면 공개 레포조차 실패한다. https로 바꿔치기하면 gh 토큰이 인증을 처리한다.
+
+```bash
+git config --global url."https://github.com/".insteadOf "git@github.com:"
+```
+
+## 설치
 
 ```bash
 claude plugin marketplace add risky-dice/claude-setup && claude plugin install jeongsan@gosu && claude plugin install live-editor@gosu && claude plugin install ponytail@gosu

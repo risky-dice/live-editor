@@ -23,6 +23,18 @@ pip install pymupdf --break-system-packages    # pdf용
 `^`로 풀지 마세요. 다른 버전이 깔려 있으면 도구가 실패하는 대신 결과 JSON의 `warnings`에
 "검증본과 다름"을 적어 보냅니다.
 
+## `.skill` 다시 포장하기
+
+앱에 올릴 패키지를 만들 때. **절대경로로 실행할 것** — 상대경로로 하면 다른 레포의
+`skills/` 안에서 돌아 `Nothing to do!` 가 난다.
+
+```bash
+cd ~/Projects/apps/live-editor/skills && zip -qr ~/Desktop/live-editor.skill live-editor -x "*.DS_Store"
+```
+
+zip 루트에 `live-editor/` 폴더가 오고 그 안에 `SKILL.md` 와 `scripts/` 가 들어간다.
+`node_modules` 와 `.venv` 는 `skills/` 밖에 두므로 자동으로 빠진다.
+
 ## 설치 확인
 
 ```bash

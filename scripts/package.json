@@ -1,0 +1,10 @@
+{
+  "name": "hwpx-live-editor-runtime",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "kordoc": "4.2.0",
+    "@rhwp/core": "0.7.19",
+    "cfb": "1.2.2"
+  }
+}

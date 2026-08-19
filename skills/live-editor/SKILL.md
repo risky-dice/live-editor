@@ -94,7 +94,7 @@ node hwpedit.mjs test        # add --keep to inspect the generated artifacts
 ```
 
 `test` builds a throwaway sample document with kordoc, then runs `blocks → render → edit → apply → svg →
-hanvas → prerender → hanvas_full.py` end to end (26 checks), confirms the one preview file carries both
+hanvas → prerender → hanvas.py` end to end (25 checks), confirms the one preview file carries both
 views and still works with the engine blocked, checks that highlighting survives spaces and that the
 table-overlap warning doesn't false-fire, plus every error path (missing/empty/corrupt/encrypted/
 wrong-format file, bad `blockIndex`, malformed JSON, newline-in-cell), and prints a pass/fail table to stderr with a
@@ -129,11 +129,11 @@ forms — are unchanged from before; the essentials:
 ```bash
 cp "<attached file>" work.hwpx   # or work.hwp for old binary — both work with the same commands
 node hwpedit.mjs render work.hwpx block-map.html      # block list JSON — your map (not shown to the user)
-python3 hanvas_full.py work.hwpx preview.html         # the one file the user sees
+python3 hanvas.py work.hwpx preview.html         # the one file the user sees
 ```
 
 `render` prints the block list (`[{i, type, text, cells?}, …]`) — that's your index map for editing, and
-`block-map.html` is scratch. **`preview.html` from `hanvas_full.py` is the only thing you ever show.** One
+`block-map.html` is scratch. **`preview.html` from `hanvas.py` is the only thing you ever show.** One
 file, one surface, every document size, every turn: 원본 뷰 (한컴 그대로) with a one-click toggle to
 깔끔 뷰 (clean HTML, the right place to check cells the renderer draws overlapped), and — the same file,
 downloaded and opened in Chrome — a working editor with click-to-edit find/replace and hwpx save. ~4–7s for
@@ -145,8 +145,9 @@ Never send a second preview file alongside it. Two cards in the conversation for
 bug, and the user has to guess which one is live. If you already showed `preview.html`, every later render
 overwrites *that same path* and updates *that same artifact id*.
 
-`hanvas`, `svg`, and `render`-as-preview still exist as commands, but they are not the shown preview
+`svg` and `render`-as-preview still exist as commands, but they are not the shown preview
 anymore — reach for them only when you need a cheap intermediate render for your own checking.
+(The old `hwpedit.mjs hanvas` toggle viewer is gone — `hanvas.py` is the only Hanvas.)
 
 ### 2. Edit request → pick the editing backend, apply, rebuild the same preview file
 
@@ -181,7 +182,7 @@ command and always the same one — rebuild `preview.html` in place, feeding `ch
 list:
 
 ```bash
-python3 hanvas_full.py work.hwpx preview.html '' '["<changed token 1>", "<changed token 2>"]'
+python3 hanvas.py work.hwpx preview.html '' '["<changed token 1>", "<changed token 2>"]'
 ```
 
 The 4th argument bakes the fluorescent highlight (`rgba(179,255,0,.45)`) into *both* views before the file
@@ -213,7 +214,7 @@ npx kordoc validate work.hwpx && cp work.hwpx "<원본이름>_수정본.hwpx"
 standalone editor ("브라우저에서 직접 편집", "편집기로 줘"), or wonders where the buttons went, the answer is
 not a second file: it's "the preview you already have — download it and open it in Chrome, and the save,
 rhwp and 정리 buttons come alive." Rebuild it with the user's work folder as the 3rd argument if you know
-it (`python3 hanvas_full.py work.hwpx preview.html "C:/Users/NAME/Downloads/작업"`), which turns on the
+it (`python3 hanvas.py work.hwpx preview.html "C:/Users/NAME/Downloads/작업"`), which turns on the
 one-click "open in rhwp Chrome extension" handoff.
 
 ### Delivering it onto a Windows/macOS machine — read this before choosing a folder
@@ -268,12 +269,12 @@ error box for a missing engine; that path is a bug if you see it.
 | `node hwpedit.mjs blocks <file>` | Block list (JSON): index, type, text, `cells` for tables. |
 | `node hwpedit.mjs render <in.hwpx> <out.html>` | Block-based preview + block list. Fast (~0.2s, no WASM), table-safe. Used for the block map, not the visible preview. |
 | `node hwpedit.mjs edit <in.hwpx> <out.hwpx> <out.html> '<findReplaceJSON>'` | **Engine-based find/replace (preferred for point edits).** rhwp editing API — layout recomputed with the edit, no glyph-overlap risk. `[{"find":"…","replace":"…","all":true?}]`. Writes highlighted SVG preview directly; prints `{ok, applied, skipped, pages}`. |
-| `node hwpedit.mjs apply <in.hwpx> <out.hwpx> <out.html> '<editsJSON>'` | Apply edits → new hwpx + scratch preview; prints `{ok, applied, stats, changed, blocks}`. Feed `changed` into the `hanvas_full.py` rebuild. |
-| `python3 hanvas_full.py <in.hwpx> <out.html> [workDir] ['<changedJSON>']` | **The preview. The only one you show.** ~4MB self-contained HTML: 원본 뷰 ↔ 깔끔 뷰 toggle, both pre-rendered and highlighted at build time, plus the embedded WASM engine for click-to-edit, hwpx save, rhwp hand-off and 수정본 정리 when opened in Chrome; auto view-only (all four buttons hidden, banner shown) where CSP blocks WASM. 3rd arg = the folder the rhwp hand-off opens from — use a **subfolder** of Downloads, never Downloads itself; `''` if unknown (rhwp button hides). 4th arg = changed-token array → fluorescent highlight in both views. |
-| `node hwpedit.mjs prerender <in.hwpx> <out.json> ['<changedJSON>']` | What `hanvas_full.py` calls internally: `{svgs:[…], clean:"…"}`, highlighted. You rarely call it directly. |
+| `node hwpedit.mjs apply <in.hwpx> <out.hwpx> <out.html> '<editsJSON>'` | Apply edits → new hwpx + scratch preview; prints `{ok, applied, stats, changed, blocks}`. Feed `changed` into the `hanvas.py` rebuild. |
+| `python3 hanvas.py <in.hwpx> <out.html> [workDir] ['<changedJSON>']` | **The preview. The only one you show.** ~4MB self-contained HTML: 원본 뷰 ↔ 깔끔 뷰 toggle, both pre-rendered and highlighted at build time, plus the embedded WASM engine for click-to-edit, hwpx save, rhwp hand-off and 수정본 정리 when opened in Chrome; auto view-only (all four buttons hidden, banner shown) where CSP blocks WASM. 3rd arg = the folder the rhwp hand-off opens from — use a **subfolder** of Downloads, never Downloads itself; `''` if unknown (rhwp button hides). 4th arg = changed-token array → fluorescent highlight in both views. |
+| `node hwpedit.mjs prerender <in.hwpx> <out.json> ['<changedJSON>']` | What `hanvas.py` calls internally: `{svgs:[…], clean:"…"}`, highlighted. You rarely call it directly. |
 | `node hwpedit.mjs hanvas <in.hwpx> <out.html> ['<changedJSON>']` | Lightweight toggle viewer (no engine, no editing). Not the shown preview anymore — a cheap render when you just need to look at something yourself. |
 | `node hwpedit.mjs svg <in.hwpx> <out.html> ['<changedJSON>']` | Raw full-fidelity SVG pages, works on `.hwpx` and raw `.hwp`. ~1–2s. Optional 3rd arg = changed substrings → highlight rect under every occurrence. |
-| `node hwpedit.mjs test [--keep]` | Self-test (26 checks): generates a sample doc and runs every command — including the `hanvas_full.py` build and its engine-less fallback — plus every error path; pass/fail table to stderr, `{ok,passed,failed,results}` to stdout. Run after setup in an unfamiliar environment. |
+| `node hwpedit.mjs test [--keep]` | Self-test (25 checks): generates a sample doc and runs every command — including the `hanvas.py` build and its engine-less fallback — plus every error path; pass/fail table to stderr, `{ok,passed,failed,results}` to stdout. Run after setup in an unfamiliar environment. |
 | `node hwpedit.mjs hwp5patch <in.hwp> <out.hwp> '<replJSON>'` | Direct OLE-binary patch for `.hwp` structural edits `apply` can't reach (e.g. table nested in a cell). `replJSON=[{"old":"…","new":"…"}]`; **old/new must be equal UTF-16LE byte length** (same digit/char count) — refuses otherwise rather than risking corruption. Verify after with `npx kordoc <out> -o check.md --silent`. |
 
 `editsJSON`: `[{"blockIndex":N,"newText":"…"}]` for paragraphs/headings, `[{"blockIndex":N,"cells":[{"row":R,"col":C,"text":"…"}]}]` for tables. Batch several edits per call.

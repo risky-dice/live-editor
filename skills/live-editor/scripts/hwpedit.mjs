@@ -10,7 +10,7 @@
 //     셀 다중 문단 글자 겹침이 원천적으로 발생하지 않는다. 출력 프리뷰는 하이라이트된 SVG.
 //   hwp5patch <in.hwp> <out.hwp> '<replJSON>'    → 구버전 HWP5 바이너리 직접 패치(셀 내 중첩표 등 kordoc apply 미지원 케이스용)
 //     replJSON = [{"old":"3,448,500","new":"3,000,000"}, …] — old/new는 UTF-16LE 바이트 길이가 같아야 함(같은 자릿수 금액/날짜 등)
-//   test     [--keep]                            → 셀프테스트: 샘플 문서 생성 → blocks/render/edit/apply/svg/hanvas/검증까지
+//   test     [--keep]                            → 셀프테스트: 샘플 문서 생성 → blocks/render/edit/apply/svg/검증까지
 //     전 과정을 돌리고 pass/fail 표를 출력한다. 설치 직후 또는 낯선 환경에서 먼저 한 번 돌려볼 것.
 //
 // 핵심: 라이브 미리보기는 rhwp(7MB WASM) 없이 kordoc 파싱만으로 그린다 → 빠르고, 표 셀 글자가 잘리지 않음.
@@ -144,7 +144,7 @@ function renderPages(doc, tokens = []) {
   const missed = tokens.filter(t => t && !hits.has(String(t).replace(/\s+/g, '')));
   if (tokens.length && missed.length) warnings.push(`미리보기에서 형광 표시를 찾지 못한 부분이 있어요(${missed.join(', ')}). 편집 자체는 적용됐으니 깔끔 뷰나 파일로 확인하세요.`);
   if (overlapPages) warnings.push(`표 셀 안에 줄바꿈이 있는 곳(${overlapPages}쪽에서 약 ${overlaps}자)이 원본 뷰에서 글자가 겹쳐 보입니다 — 렌더 엔진 한계이고 문서나 편집 결과에는 이상이 없어요. 그 부분은 깔끔 뷰나 내려받은 파일로 확인하세요.`);
-  if (!pages.length) warnings.push('렌더된 페이지가 없어요 — 이미지 전용이거나 빈 문서일 수 있어요. 깔끔 뷰(render/hanvas의 HTML 뷰)로 내용을 확인하세요.');
+  if (!pages.length) warnings.push('렌더된 페이지가 없어요 — 이미지 전용이거나 빈 문서일 수 있어요. 깔끔 뷰(render의 HTML 뷰)로 내용을 확인하세요.');
   return { pages, total };
 }
 
@@ -380,7 +380,7 @@ if (cmd === 'blocks') {
   out({ ok: true, applied: result.applied, stats: result.changes?.stats, changed: changed.filter(Boolean), blocks });
 
 } else if (cmd === 'prerender') {
-  // hanvas_full.py 전용 — 자립형 편집기 안에 심을 재료(원본 뷰 SVG + 깔끔 뷰 HTML)를 한 번에 뽑는다.
+  // hanvas.py 전용 — 자립형 편집기 안에 심을 재료(원본 뷰 SVG + 깔끔 뷰 HTML)를 한 번에 뽑는다.
   // 형광펜까지 여기서 칠해두면 엔진(WASM)이 막힌 환경에서도 바뀐 자리가 그대로 보인다.
   const [inF, outJson, changedJson] = args;
   requireOut(outJson, 'JSON');
@@ -410,54 +410,6 @@ if (cmd === 'blocks') {
   const body = svgs.map(s => `<div class="page">${s}</div>`).join('\n');
   writeFileSync(outHtml, `<!doctype html><meta charset="utf-8"><style>body{margin:0;background:#eef1f5}.page{background:#fff;max-width:900px;margin:16px auto;box-shadow:0 2px 12px rgba(0,0,0,.12)}.page svg{width:100%;height:auto;display:block}</style>${body}`);
   out({ ok: svgs.length > 0, pages: svgs.length, highlighted: changedTokens.length });
-
-} else if (cmd === 'hanvas') {
-  // Hanvas 토글 뷰어 — 원본 뷰(rhwp SVG) ↔ 깔끔 뷰(블록 HTML)를 한 파일에 담은 기본 프리뷰.
-  // changedJSON(바뀐 문자열 배열)을 주면 두 뷰 모두에 형광 하이라이트.
-  const [inF, outHtml, changedJson] = args;
-  requireOut(outHtml, 'HTML');
-  let tokens = [];
-  if (changedJson) { try { tokens = JSON.parse(changedJson); } catch { warnings.push('하이라이트 토큰 JSON을 해석할 수 없어 하이라이트 없이 렌더했어요.'); } }
-  const bytes = bytesOf(inF);
-  const blocks = await getBlocks(bytes);
-  let cbody = cleanBody(blocks);
-  for (const t of tokens) if (t && t.length >= 2) cbody = cbody.split(esc(t)).join(`<mark>${esc(t)}</mark>`);
-
-  const rhwp = await loadRhwp('hanvas');
-  const hdoc = openRhwpDoc(rhwp, bytes);
-  const { pages: rawPages } = renderPages(hdoc, tokens);
-  const pages = rawPages.map(s => `<div class="page">${s}</div>`);
-  if (!pages.length) pages.push('<div class="page" style="padding:40px;text-align:center;color:#888">원본 뷰를 렌더하지 못했어요 — 깔끔 뷰로 확인하세요.</div>');
-  const IC_O = '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>';
-  const IC_C = '<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>';
-  writeFileSync(outHtml, `<!doctype html><html lang="ko"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>Hanvas — ${esc(basename(inF))}</title><style>
- *{box-sizing:border-box} body{margin:0;background:#f4f4f4;font-family:'Apple SD Gothic Neo','Noto Sans CJK KR','Malgun Gothic',sans-serif;color:#111}
- #topbar{position:sticky;top:0;z-index:10;background:#fff;border-bottom:1px solid #e6e6e6;padding:8px 14px;display:flex;align-items:center;gap:8px}
- #topbar b{font-size:14px;font-weight:800;letter-spacing:.3px} .ver{font-size:10px;font-weight:600;color:#666;background:#f0f0f0;border:1px solid #e0e0e0;padding:2px 7px;border-radius:99px;margin-right:6px}
- .ibtn{position:relative;width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;border:1px solid #dcdcdc;border-radius:8px;background:#fff;color:#111;cursor:pointer;padding:0}
- .ibtn:hover,.ibtn.active{background:#111;color:#fff;border-color:#111}
- .ibtn svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
- .ibtn::after{content:attr(data-tip);position:absolute;top:40px;left:50%;transform:translateX(-50%);background:#111;color:#fff;font-size:11px;padding:4px 9px;border-radius:6px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .12s;z-index:20}
- .ibtn:hover::after{opacity:1} .hint{font-size:12px;color:#888}
- .page{background:#fff;max-width:900px;margin:14px auto;box-shadow:0 2px 12px rgba(0,0,0,.1)} .page svg{width:100%;height:auto;display:block}
- #cleanview{display:none} #cleanview .cpage{background:#fff;max-width:860px;margin:20px auto;padding:34px 40px;box-shadow:0 3px 16px rgba(0,0,0,.12);border-radius:4px}
- #cleanview table{border-collapse:collapse;width:100%;margin:10px 0 16px;font-size:14px} #cleanview th,#cleanview td{border:1px solid #444;padding:6px 10px;vertical-align:top;text-align:left}
- #cleanview th{background:#f1f3f5;font-weight:700} #cleanview p{font-size:15px;line-height:1.8;margin:0 0 10px} #cleanview .h{font-weight:700;font-size:16px;margin:16px 0 8px}
- mark{background:rgba(179,255,0,.45);mix-blend-mode:multiply;color:inherit;padding:1px 2px;border-radius:2px}
-</style></head><body>
-<div id="topbar"><b>Hanvas</b><span class="ver">v1.1</span>
- <button id="bO" class="ibtn active" data-tip="원본 뷰 (rhwp 렌더링)">${IC_O}</button>
- <button id="bC" class="ibtn" data-tip="깔끔 뷰 (HTML, 내용 확인용)">${IC_C}</button>
- <span class="hint">${esc(basename(inF))}${tokens.length ? ' · 이번 변경 형광 표시' : ''}</span></div>
-<div id="svgview">${pages.join('\n')}</div>
-<div id="cleanview"><div class="cpage">${cbody}</div></div>
-<script>
-function sh(m){document.getElementById('svgview').style.display=m==='o'?'block':'none';document.getElementById('cleanview').style.display=m==='c'?'block':'none';
-document.getElementById('bO').classList.toggle('active',m==='o');document.getElementById('bC').classList.toggle('active',m==='c');window.scrollTo(0,0);}
-document.getElementById('bO').onclick=()=>sh('o');document.getElementById('bC').onclick=()=>sh('c');
-</script></body></html>`);
-  out({ ok: true, pages: rawPages.length, highlighted: tokens.length });
 
 } else if (cmd === 'edit') {
   // rhwp 편집 엔진 기반 찾아바꾸기 — 검색은 searchAllText, 셀 안 텍스트는 delete+insertTextInCell,
@@ -577,7 +529,6 @@ document.getElementById('bO').onclick=()=>sh('o');document.getElementById('bC').
   apply     <in> <out.hwpx> <out.html> '<editsJSON>'      edits=[{blockIndex,newText}|{blockIndex,cells:[{row,col,text}]}]
   edit      <in> <out.hwpx> <out.html> '<findReplaceJSON>' edits=[{"find":"A","replace":"B","all":false}]
   svg       <f> <out.html> ['<changedJSON>']
-  hanvas    <f> <out.html> ['<changedJSON>']
   hwp5patch <in.hwp> <out.hwp> '<replJSON>'                repl=[{"old":"1,000","new":"2,000"}]  (길이 동일만)
   test      [--keep]                                       설치 검증 셀프테스트`);
 }
@@ -587,7 +538,7 @@ document.getElementById('bO').onclick=()=>sh('o');document.getElementById('bC').
 }
 
 // ---- 셀프테스트 ----
-// 자기 자신을 자식 프로세스로 불러 blocks→render→edit→apply→svg→hanvas와 오류 경로까지 전부 돌린다.
+// 자기 자신을 자식 프로세스로 불러 blocks→render→edit→apply→svg와 오류 경로까지 전부 돌린다.
 // 샘플 문서는 kordoc의 markdownToHwpx로 그 자리에서 만들기 때문에 별도 첨부 파일이 필요 없다.
 async function selfTest(keep) {
   const { execFileSync } = await import('node:child_process');
@@ -677,11 +628,6 @@ async function selfTest(keep) {
     const r = asJson(run(['svg', src, P('s.html')]).stdout);
     return { ok: r?.ok === true && r.pages >= 1, detail: `${r?.pages ?? 0}쪽` };
   });
-  check('hanvas — 원본/깔끔 토글 뷰', () => {
-    const r = asJson(run(['hanvas', src, P('h.html'), JSON.stringify(['이용선'])]).stdout);
-    const html = existsSync(P('h.html')) ? readFileSync(P('h.html'), 'utf-8') : '';
-    return { ok: r?.ok === true && html.includes('id="svgview"') && html.includes('id="cleanview"') && html.includes('<mark>'), detail: `${r?.pages ?? 0}쪽 · 하이라이트 포함` };
-  });
   // SVG는 공백을 글자로 안 찍는다 — 띄어쓰기 든 치환문에서 형광펜이 조용히 사라진 적이 있어 항목으로 박아둔다.
   let hlWarns = [];
   check('형광 표시 — 띄어쓰기 든 문자열', () => {
@@ -698,9 +644,9 @@ async function selfTest(keep) {
   });
 
   // 6-b. Hanvas 스튜디오(파이썬 조립본) — 있으면 같이 검증한다
-  check('hanvas_full — 자립형 스튜디오 HTML', () => {
-    const py = pjoin(pdirname(SELF), 'hanvas_full.py');
-    if (!existsSync(py)) return { ok: true, detail: '건너뜀(hanvas_full.py 없음)' };
+  check('hanvas — 자립형 스튜디오 HTML', () => {
+    const py = pjoin(pdirname(SELF), 'hanvas.py');
+    if (!existsSync(py)) return { ok: true, detail: '건너뜀(hanvas.py 없음)' };
     let r;
     try {
       r = execFileSync('python3', [py, src, P('studio.html'), '', JSON.stringify(['이용선'])], {
@@ -717,7 +663,7 @@ async function selfTest(keep) {
 
   // 엔진(WASM)이 막힌 환경에서도 이 파일 하나로 원본 뷰와 깔끔 뷰를 다 볼 수 있어야 한다.
   // 깔끔 뷰 재료가 빠지면 "겹쳐 보이는 표는 깔끔 뷰로 보세요"라는 안내가 거짓말이 된다.
-  check('hanvas_full — 엔진 없이도 두 뷰 다 있음', () => {
+  check('hanvas — 엔진 없이도 두 뷰 다 있음', () => {
     if (!existsSync(P('studio.html'))) return { ok: true, detail: '건너뜀(앞 항목 미실행)' };
     const html = readFileSync(P('studio.html'), 'utf-8');
     const hasClean = /const CLEAN_GZ_B64 = "[^"]{40,}"/.test(html);

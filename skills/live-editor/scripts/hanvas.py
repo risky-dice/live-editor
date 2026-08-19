@@ -7,7 +7,7 @@ Everything runs client-side in the artifact window. No server, no API.
 """
 import base64, gzip, os, re, json, sys, subprocess, tempfile
 
-# usage: python3 hanvas_full.py <in.hwpx> <out.html> [downloads_dir] ['["바뀐문자열", …]']
+# usage: python3 hanvas.py <in.hwpx> <out.html> [downloads_dir] ['["바뀐문자열", …]']
 #   downloads_dir 예: /Users/USERNAME/Downloads  — 주면 "rhwp로 열기" 원클릭 연동 버튼 활성화
 #                     모르면 빈 문자열("")을 주고 4번째 인자만 채워도 된다
 #   4번째 인자        — 바뀐 문자열 배열(JSON). 두 뷰 모두에 형광펜이 칠해진 채로 구워진다.

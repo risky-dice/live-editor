@@ -14,7 +14,13 @@ node hwpedit.mjs test   # 설치 확인
 
 ## 2. jeongsan (학교회계 정산 검증)
 `~/Projects/school/jeongsan` — 별도 레포. clone 후 플러그인 등록.
-설치 권한 없는 학교 노트북이면 `jeongsan.pyz` 하나만 복사해서 `python3 jeongsan.pyz`.
+설치 권한 없는 학교 노트북이면 clone 없이 릴리스에서 단일 파일만 받는다:
+
+```bash
+gh release download v0.1.0 -R risky-dice/jeongsan   # 또는 웹에서 직접 다운로드
+python3 jeongsan.pyz rules
+```
+파이썬 3.9+ 외 의존성 없음(xlsx 출력만 openpyxl 필요).
 
 ## 3. ponytail (남의 스킬, 재설치)
 복사하지 말 것. `~/.claude/settings.json` 훅에 `/Users/gosu/...` 절대경로가 박혀 있어

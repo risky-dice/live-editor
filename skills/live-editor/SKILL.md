@@ -272,7 +272,6 @@ error box for a missing engine; that path is a bug if you see it.
 | `node hwpedit.mjs apply <in.hwpx> <out.hwpx> <out.html> '<editsJSON>'` | Apply edits → new hwpx + scratch preview; prints `{ok, applied, stats, changed, blocks}`. Feed `changed` into the `hanvas.py` rebuild. |
 | `python3 hanvas.py <in.hwpx> <out.html> [workDir] ['<changedJSON>']` | **The preview. The only one you show.** ~4MB self-contained HTML: 원본 뷰 ↔ 깔끔 뷰 toggle, both pre-rendered and highlighted at build time, plus the embedded WASM engine for click-to-edit, hwpx save, rhwp hand-off and 수정본 정리 when opened in Chrome; auto view-only (all four buttons hidden, banner shown) where CSP blocks WASM. 3rd arg = the folder the rhwp hand-off opens from — use a **subfolder** of Downloads, never Downloads itself; `''` if unknown (rhwp button hides). 4th arg = changed-token array → fluorescent highlight in both views. |
 | `node hwpedit.mjs prerender <in.hwpx> <out.json> ['<changedJSON>']` | What `hanvas.py` calls internally: `{svgs:[…], clean:"…"}`, highlighted. You rarely call it directly. |
-| `node hwpedit.mjs hanvas <in.hwpx> <out.html> ['<changedJSON>']` | Lightweight toggle viewer (no engine, no editing). Not the shown preview anymore — a cheap render when you just need to look at something yourself. |
 | `node hwpedit.mjs svg <in.hwpx> <out.html> ['<changedJSON>']` | Raw full-fidelity SVG pages, works on `.hwpx` and raw `.hwp`. ~1–2s. Optional 3rd arg = changed substrings → highlight rect under every occurrence. |
 | `node hwpedit.mjs test [--keep]` | Self-test (25 checks): generates a sample doc and runs every command — including the `hanvas.py` build and its engine-less fallback — plus every error path; pass/fail table to stderr, `{ok,passed,failed,results}` to stdout. Run after setup in an unfamiliar environment. |
 | `node hwpedit.mjs hwp5patch <in.hwp> <out.hwp> '<replJSON>'` | Direct OLE-binary patch for `.hwp` structural edits `apply` can't reach (e.g. table nested in a cell). `replJSON=[{"old":"…","new":"…"}]`; **old/new must be equal UTF-16LE byte length** (same digit/char count) — refuses otherwise rather than risking corruption. Verify after with `npx kordoc <out> -o check.md --silent`. |
@@ -313,7 +312,7 @@ error box for a missing engine; that path is a bug if you see it.
 - **Table cells containing an explicit line break** are drawn by the engine with every line on the same
   baseline, so "(단원명)⏎(영역명)" comes out as overlapping glyphs ("(단영역원명명)"). Upstream rhwp
   limitation, present in 0.7.19 and 0.8.0 — the document and the edited output are both fine, only the
-  full-fidelity SVG view is wrong. `svg`/`hanvas`/`edit` detect the overlap and attach a `warnings` entry;
+  full-fidelity SVG view is wrong. `svg`/`edit` detect the overlap and attach a `warnings` entry;
   pass it on and point the user at the clean view or the downloaded file for those cells. Never "fix" the
   document text to work around a rendering artifact.
 

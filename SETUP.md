@@ -1,28 +1,35 @@
-# 새 노트북 세팅 (내가 만든 것 + 쓰는 것)
+# 새 노트북 세팅
 
-## 1. live-editor (이 레포)
-Claude 앱 스킬. 계정에 업로드돼 있으면 앱 목록엔 자동으로 뜨지만 **실행 환경은 안 따라온다.**
+한 줄로 끝난다:
 
 ```bash
-mkdir -p ~/live-editor-work && cp ~/Projects/apps/live-editor/scripts/* ~/live-editor-work/
-cd ~/live-editor-work && npm install && pip install pymupdf --break-system-packages
-node hwpedit.mjs test   # 설치 확인
+claude plugin marketplace add risky-dice/claude-setup && claude plugin install jeongsan@gosu && claude plugin install live-editor@gosu && claude plugin install ponytail@gosu
 ```
 
-버전 고정 필수. `@rhwp/core`를 `^`로 풀면 렌더링이 깨진다.
-계정에 안 뜨면 이 폴더를 `.skill`로 다시 업로드.
+## 자동으로 안 되는 것 두 가지
 
-## 2. jeongsan (학교회계 정산 검증)
-`~/Projects/school/jeongsan` — 별도 레포. clone 후 플러그인 등록.
-설치 권한 없는 학교 노트북이면 clone 없이 릴리스에서 단일 파일만 받는다:
+**1. live-editor 실행 환경.** 스킬 정의는 위 명령으로 오지만 엔진은 안 온다.
+첫 사용 때 Claude가 세션당 한 번 자동 설치한다(40~70초).
+
+```bash
+mkdir -p ~/live-editor-work && cp <skill-dir>/scripts/* ~/live-editor-work/
+cd ~/live-editor-work && npm install && pip install pymupdf --break-system-packages
+```
+
+node·npm·pip가 없거나 설치 권한이 막힌 기계에서는 **스킬은 보이는데 실행이 실패한다.**
+버전 고정 필수 — `@rhwp/core`를 `^`로 풀면 렌더링이 깨진다.
+
+**2. 설치 권한 없는 학교 노트북의 jeongsan.**
+플러그인 설치 대신 릴리스에서 단일 파일만 받는다.
 
 ```bash
 gh release download v0.1.0 -R risky-dice/jeongsan   # 또는 웹에서 직접 다운로드
 python3 jeongsan.pyz rules
 ```
+
 파이썬 3.9+ 외 의존성 없음(xlsx 출력만 openpyxl 필요).
 
-## 3. ponytail (남의 스킬, 재설치)
-복사하지 말 것. `~/.claude/settings.json` 훅에 `/Users/gosu/...` 절대경로가 박혀 있어
-사용자명이 다른 기계에선 조용히 실패한다. 원본에서 새로 설치:
-https://github.com/DietrichGebert/ponytail
+## 앱 스킬로도 쓰려면
+
+live-editor는 Claude 앱에 업로드한 계정 스킬이기도 하다. 앱에서 지웠다면
+GitHub 사본이 자동으로 되살리지 않으므로 `skills/live-editor/` 를 `.skill` 로 다시 올린다.

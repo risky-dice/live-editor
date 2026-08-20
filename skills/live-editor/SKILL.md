@@ -207,6 +207,11 @@ the spelled word and the numeral, and every repeated occurrence (합계, 품의�
 **Be a careful editor.** Match tone/spacing/honorifics; change only what was asked; ask a short clarifying
 question only when the edit content itself is ambiguous.
 
+**공문/기안문 본문을 새로 써 달라고 할 때** (고치는 게 아니라 단락을 다시 쓰는 요청) — 경어체(합니다/습니다체),
+두괄식(결론 → 배경 → 세부), 본문 순서는 목적/배경 → 세부 내용 → 요청/협조 사항 → 붙임, 관용 표현은 "~와
+관련하여 / 아래와 같이 / ~하여 주시기 바랍니다". 문서에 이미 있는 개조식 기호(□ ○ ― ※)와 들여쓰기 폭은
+그대로 따라 쓴다 — 새 체계를 들여오지 말 것.
+
 ### 3. "저장" / "파일로 줘" → deliver
 
 ```bash
@@ -302,6 +307,73 @@ error box for a missing engine; that path is a bug if you see it.
 
 `editsJSON`: `[{"blockIndex":N,"newText":"…"}]` for paragraphs/headings, `[{"blockIndex":N,"cells":[{"row":R,"col":C,"text":"…"}]}]` for tables. Batch several edits per call.
 
+## The XML fallback — three traps, all of them silent
+
+Sometimes there is no way around unzipping `work.hwpx` and editing `Contents/section0.xml` by hand (the
+multi-line-cell case below is the usual one). The engine paths are safe because rhwp/kordoc rebuild the
+layout for you; the moment you patch the XML yourself you own three problems that **`npx kordoc validate`
+and `node hwpedit.mjs blocks` both happily pass**. Every one of these was measured on a real 23-page
+교수·학습 운영 계획 hwpx, not reasoned about.
+
+**1. Delete `<hp:linesegarray>` from every paragraph you touched.** It's the line-layout cache the previous
+editor wrote — where each line breaks, how tall it is. Change the text and the cache is a lie, but the
+renderer still honours it, so the new text gets crammed onto the old line boxes. Measured on rhwp — same
+document, same edit, one phrase replaced with a much longer one:
+
+| | rendered pages | `kordoc validate` |
+|---|---|---|
+| original | 23 | ✓ |
+| XML replace, `linesegarray` left in place | **23** — no reflow, text overruns its line boxes | **✓** |
+| XML replace + `linesegarray` removed | **24** — correct reflow | ✓ |
+
+Drop the child element and the layout is recomputed on open. 한/글 does the same on its side — that is what
+the cache is for — though that half wasn't measured here. Cheap either way, and there is no case where
+keeping a stale one is right:
+
+```python
+def strip_lineseg(p):   # p = an <hp:p> whose text you changed
+    for c in list(p):
+        if etree.QName(c.tag).localname == 'linesegarray':
+            p.remove(c)
+```
+
+(These snippets use `lxml` — `pip install lxml --break-system-packages`. It is deliberately **not** part of
+the one-time setup: the engine paths never need it, and this fallback should stay rare enough that paying
+for it here is the right trade. Stdlib `ElementTree` mangles the `hp:`/`hs:` prefixes on write, so don't
+substitute it.)
+
+**2. Never delete or renumber `<hp:run>` elements — write into the `<hp:t>` you actually found.** A run is
+not "one piece of text". In a real form the section's first paragraph looks like this:
+
+```
+p[0] children: ['run', 'run', 'linesegarray']
+  run[0] children=['secPr', 'ctrl']   ← 용지·여백·머리말 정의. No <hp:t> at all.
+  run[1] children=['tbl', 't']        ← the 제목 box: an entire table lives inside this run
+```
+
+So "set run 0's text, drop the rest" — the obvious-looking helper — writes nothing (run[0] has no `<hp:t>`)
+and then deletes a table and the section's title with it. Measured: `table: 39 → 38`, title text gone,
+`kordoc validate ✓`. Walk to the `<hp:t>` nodes by content and assign `t.text` there; leave the run
+structure exactly as you found it, and never `remove()` a run you didn't inspect.
+
+**3. Verify with a before/after block census, not just a validator.** `validate` checks the container,
+`blocks` lists what it can parse — neither notices that a table stopped existing. Take the census on both
+sides and diff it; it costs one extra command and catches the whole class of "valid file, missing content":
+
+```bash
+node hwpedit.mjs blocks work.hwpx | python3 -c "import json,sys,collections; b=json.load(sys.stdin); print(len(b), dict(collections.Counter(x['type'] for x in b)))"
+# before: 102 {'table': 39, 'image': 2, 'paragraph': 61}
+# after:  102 {'table': 39, 'image': 2, 'paragraph': 61}   ← counts must be identical for a text-only edit
+```
+
+Any drop means the patch ate structure — restore from the copy and go back to `edit`/`apply`. Report it to
+the user rather than shipping a file that opens cleanly and is missing a 표.
+
+The mechanical parts stay as they were: find the old value as a literal substring in the `<hp:t>` runs
+(confirm uniqueness first — a global replace is correct when the same value legitimately repeats across
+cells that should all change together), and re-zip preserving each entry's original `compress_type` with
+`mimetype` stored first and uncompressed.
+
 ## Scope and limits
 
 - `.hwpx` is the most reliable target; `.hwp` (old OLE binary) mostly works too via two tiers — `apply`
@@ -312,11 +384,12 @@ error box for a missing engine; that path is a bug if you see it.
   returns `applied:0` with a skip reason; tell the user this is a known limitation, not a silent failure).
 - **Multi-line table cells often can't be patched via `apply`** — a cell with several literal line breaks
   makes kordoc's line-diff ambiguous even for a one-character change, skip reason `"셀 줄 경계 매핑 모호 (리터럴
-  <br>/문단 내 줄바꿈) — 미지원"`. Fall back to a direct XML text replace: unzip `work.hwpx`, find the old value
-  as a literal substring in `Contents/section0.xml`'s `<hp:t>` runs (confirm uniqueness first — a
-  global replace is correct when the same value legitimately repeats across cells that should all change
-  together), re-zip preserving each entry's original `compress_type` and leaving `mimetype` stored first
-  and uncompressed, then verify with `node hwpedit.mjs blocks` + `npx kordoc validate`.
+  <br>/문단 내 줄바꿈) — 미지원"`. Fall back to the direct XML text replace — but read **"The XML fallback"**
+  above first; done naively it produces a file that passes every validator and is still wrong.
+- **`Preview/PrvText.txt` is never regenerated** — not by `edit`, not by `apply`, not by an XML patch. It's
+  the snippet Windows 탐색기 and the 한/글 열기 dialog show, and it keeps quoting the pre-edit text until 한/글
+  saves the file once. Cosmetic, not worth chasing — but don't tell the user the thumbnail/preview text
+  updated, because it didn't.
 - `hwp5patch`'s same-UTF-16LE-length requirement means digit-count changes (e.g. 3-digit → 4-digit amount)
   aren't possible through it — say so rather than attempting a workaround that could corrupt the file.
 - Fonts: rhwp renders 함초롬체 when embedded, falls back to whatever CJK fonts are available otherwise — no

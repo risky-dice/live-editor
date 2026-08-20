@@ -186,7 +186,11 @@ python3 hanvas.py work.hwpx preview.html '' '["<changed token 1>", "<changed tok
 ```
 
 The 4th argument bakes the fluorescent highlight (`rgba(179,255,0,.45)`) into *both* views before the file
-is written, so the changed text is marked even in the view-only artifact panel. Per-glyph coordinates mark
+is written, so the changed text is marked in the view-only artifact panel **and in Chrome** — a 형광 toggle
+(🖊, on by default whenever changed tokens were passed) makes each view show the baked page instead of the
+one the engine would draw live. Without it Chrome silently drops every highlight: the engine re-renders the
+SVG pages from the document and `buildClean()` re-assembles the 깔끔 뷰 from `exportHwpx()`, and neither
+carries the marks. Per-glyph coordinates mark
 every occurrence precisely — which matters exactly when the same value repeats (unit price *and* 합계 *and*
 품의금액 *and* 정산금액 changing together). The 3rd argument is the user's Downloads path for the rhwp
 handoff button; pass `''` when you don't know it.
@@ -270,7 +274,7 @@ error box for a missing engine; that path is a bug if you see it.
 | `node hwpedit.mjs render <in.hwpx> <out.html>` | Block-based preview + block list. Fast (~0.2s, no WASM), table-safe. Used for the block map, not the visible preview. |
 | `node hwpedit.mjs edit <in.hwpx> <out.hwpx> <out.html> '<findReplaceJSON>'` | **Engine-based find/replace (preferred for point edits).** rhwp editing API — layout recomputed with the edit, no glyph-overlap risk. `[{"find":"…","replace":"…","all":true?}]`. Writes highlighted SVG preview directly; prints `{ok, applied, skipped, pages}`. |
 | `node hwpedit.mjs apply <in.hwpx> <out.hwpx> <out.html> '<editsJSON>'` | Apply edits → new hwpx + scratch preview; prints `{ok, applied, stats, changed, blocks}`. Feed `changed` into the `hanvas.py` rebuild. |
-| `python3 hanvas.py <in.hwpx> <out.html> [workDir] ['<changedJSON>']` | **The preview. The only one you show.** ~4MB self-contained HTML: 원본 뷰 ↔ 깔끔 뷰 toggle, both pre-rendered and highlighted at build time, plus the embedded WASM engine for click-to-edit, hwpx save, rhwp hand-off and 수정본 정리 when opened in Chrome; auto view-only (all four buttons hidden, banner shown) where CSP blocks WASM. 3rd arg = the folder the rhwp hand-off opens from — use a **subfolder** of Downloads, never Downloads itself; `''` if unknown (rhwp button hides). 4th arg = changed-token array → fluorescent highlight in both views. |
+| `python3 hanvas.py <in.hwpx> <out.html> [workDir] ['<changedJSON>']` | **The preview. The only one you show.** ~4MB self-contained HTML: 원본 뷰 ↔ 깔끔 뷰 toggle, both pre-rendered and highlighted at build time, plus a 형광 toggle so the highlights survive in Chrome too, plus the embedded WASM engine for hwpx save, rhwp hand-off and 수정본 정리; auto view-only (buttons hidden, banner shown) where CSP blocks WASM. 3rd arg = the folder the rhwp hand-off opens from — use a **subfolder** of Downloads, never Downloads itself; `''` if unknown (rhwp button hides). 4th arg = changed-token array → fluorescent highlight in both views, in both engine and view-only modes. |
 | `node hwpedit.mjs prerender <in.hwpx> <out.json> ['<changedJSON>']` | What `hanvas.py` calls internally: `{svgs:[…], clean:"…"}`, highlighted. You rarely call it directly. |
 | `node hwpedit.mjs svg <in.hwpx> <out.html> ['<changedJSON>']` | Raw full-fidelity SVG pages, works on `.hwpx` and raw `.hwp`. ~1–2s. Optional 3rd arg = changed substrings → highlight rect under every occurrence. |
 | `node hwpedit.mjs test [--keep]` | Self-test (25 checks): generates a sample doc and runs every command — including the `hanvas.py` build and its engine-less fallback — plus every error path; pass/fail table to stderr, `{ok,passed,failed,results}` to stdout. Run after setup in an unfamiliar environment. |

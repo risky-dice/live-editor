@@ -153,10 +153,18 @@ async function loadHwp(bytes, name) {
     doc = new HwpDocument(bytes);
     status(`문서 로드 완료 (${Math.round(performance.now()-t0)}ms) — ${doc.pageCount()}페이지 렌더링 중…`);
     $('#editbar').style.display = 'flex';
+    if (HAS_HL) { try { await getHlSvgs(); hlMode = true; $('#btnHl').style.display = ''; } catch (e) {} }
     await renderAll();
   } catch (e) {
     status('문서 로드 실패: ' + e);
   }
+}
+
+let hlSvgs = null, hlMode = false;
+async function getHlSvgs() {
+  if (hlSvgs) return hlSvgs;
+  hlSvgs = JSON.parse(new TextDecoder().decode(await gunzip(b64ToBytes(PRERENDERED_GZ_B64))));
+  return hlSvgs;
 }
 
 async function renderAll(visibleFirst) {
@@ -191,7 +199,7 @@ async function renderAll(visibleFirst) {
     if (my !== renderToken) return;
     const i = order[k];
     try {
-      const svg = doc.renderPageSvg(i);
+      const svg = (hlMode && hlSvgs && hlSvgs[i]) ? hlSvgs[i] : doc.renderPageSvg(i);
       const el = pagesEl.children[i];
       el.innerHTML = svg;
       const s = el.querySelector('svg');
@@ -285,7 +293,9 @@ function tblHtml(tbl) {
 }
 
 async function buildClean() {
-  if (!doc) {   // 보기 전용 — 엔진이 없으니 빌드 때 심어둔 깔끔 뷰를 쓴다
+  // 엔진이 없거나(보기 전용) 형광 표시가 켜져 있으면 빌드 때 심어둔 깔끔 뷰를 쓴다.
+  // 엔진으로 새로 만들면 <mark>가 없어 형광이 사라진다.
+  if (!doc || hlMode) {
     const html = new TextDecoder().decode(await gunzip(b64ToBytes(CLEAN_GZ_B64)));
     if (!html) throw new Error('깔끔 뷰가 이 파일에 들어있지 않습니다');
     $('#cleanview').innerHTML = '<div class="cpage">' + html + '</div>';
@@ -348,6 +358,20 @@ async function pickWorkDir(quiet) {
     return null;
   }
 }
+$('#btnHl').addEventListener('click', async () => {
+  hlMode = !hlMode;
+  $('#btnHl').dataset.tip = hlMode ? '형광 표시 끄기' : '형광 표시 켜기';
+  $('#btnHl').style.opacity = hlMode ? '1' : '.45';
+  cleanBuilt = false;                       // 깔끔 뷰는 형광 유무로 내용이 달라진다
+  if (viewMode === 'clean') {
+    try { await buildClean(); cleanBuilt = true; } catch (e) { status('깔끔 뷰 생성 실패: ' + e); return; }
+    status(hlMode ? '깔끔 뷰 · 형광 표시' : '깔끔 뷰 (내용 확인용)');
+  } else {
+    await renderAll();
+    status(hlMode ? '원본 뷰 · 형광 표시' : '원본 뷰 (편집 엔진 렌더)');
+  }
+});
+
 $('#btnDir').addEventListener('click', () => pickWorkDir());
 
 async function download(name) {
@@ -571,6 +595,7 @@ HTML_HEAD = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
   .page canvas { width:100%; height:auto; display:block; }
   .ph { padding:40px; color:#aaa; text-align:center; font-size:13px; }
   #cleanview { display:none; }
+  #cleanview mark { background:rgba(179,255,0,.45); color:inherit; border-radius:2px; }
   #cleanview .cpage { background:#fff; max-width:860px; margin:20px auto; padding:36px 42px; box-shadow:0 3px 16px rgba(0,0,0,.12); border-radius:4px; }
   #cleanview table { border-collapse:collapse; width:100%; margin:10px 0 16px; font-size:14px; }
   #cleanview th, #cleanview td { border:1px solid #444; padding:6px 10px; vertical-align:top; text-align:left; }
@@ -585,6 +610,9 @@ HTML_HEAD = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
   </label>
   <span id="editbar" style="display:none">
     <button id="btnView" class="ibtn" data-tip="깔끔 뷰로 전환"></button>
+    <button id="btnHl" class="ibtn" data-tip="형광 표시 끄기" style="display:none">
+      <svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+    </button>
     <button id="btnSave" class="ibtn" data-tip="hwpx로 저장">
       <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
     </button>
@@ -625,6 +653,7 @@ out = (HTML_HEAD
        + "const HANVAS_DOC_NAME = " + json.dumps(DOC_NAME) + ";\n"
        + "const PRERENDERED_GZ_B64 = \"" + prerendered_gz_b64 + "\";\n"
        + "const CLEAN_GZ_B64 = \"" + clean_gz_b64 + "\";\n"
+       + "const HAS_HL = " + ("true" if CHANGED else "false") + ";\n"
        + APP_JS
        + HTML_TAIL)
 

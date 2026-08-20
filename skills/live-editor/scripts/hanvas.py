@@ -14,7 +14,7 @@ from datetime import datetime
 #   4번째 인자        — 바뀐 문자열 배열(JSON). 두 뷰 모두에 형광펜이 칠해진 채로 구워진다.
 IN_HWPX = os.path.abspath(sys.argv[1])
 OUT_HTML = os.path.abspath(sys.argv[2])
-DOWNLOADS = sys.argv[3].rstrip("/") if len(sys.argv) > 3 else ""
+DOWNLOADS = sys.argv[3].rstrip("/\\") if len(sys.argv) > 3 else ""   # 윈도우 경로의 꼬리 역슬래시도
 CHANGED = sys.argv[4] if len(sys.argv) > 4 else ""
 HERE = os.getcwd()   # ~/live-editor-work (npm install 완료 상태)
 RHWP_DIR = os.path.join(HERE, "node_modules/@rhwp/core")

@@ -69,12 +69,28 @@ something subtly different from what was asked.
 
 ## One-time setup per session
 
+macOS / Linux:
+
 ```bash
-mkdir -p ~/live-editor-work && cp <skill-dir>/scripts/*.mjs <skill-dir>/scripts/package.json <skill-dir>/scripts/*.py <skill-dir>/scripts/requirements.txt <skill-dir>/scripts/*.sh ~/live-editor-work/ && chmod +x ~/live-editor-work/*.sh
+mkdir -p ~/live-editor-work && cp <skill-dir>/scripts/* ~/live-editor-work/ && chmod +x ~/live-editor-work/*.sh
 cd ~/live-editor-work
 npm install                                    # kordoc + @rhwp/core + cfb, ~40–70s (only needed for hwp/hwpx)
 pip install pymupdf --break-system-packages    # only needed for pdf
 ```
+
+Windows (PowerShell):
+
+```powershell
+New-Item -ItemType Directory -Force "$HOME\live-editor-work" | Out-Null
+Copy-Item "<skill-dir>\scripts\*" "$HOME\live-editor-work\" -Force
+cd "$HOME\live-editor-work"
+npm install
+pip install pymupdf
+```
+
+**On Windows, every `python3` in this document is `python`.** `python3` usually doesn't exist there; `python`
+or `py` does. The self-test resolves the interpreter itself, but the commands you type don't — so
+`python hanvas.py …`, not `python3 hanvas.py …`. Everything else (`node hwpedit.mjs …`) is identical.
 
 Versions in `package.json` are pinned exactly (`kordoc 4.2.0`, `@rhwp/core 0.8.4`, `cfb 1.2.2`) — these are
 the versions the recipes here were verified against, and `@rhwp/core` in particular ships breaking render
@@ -254,6 +270,26 @@ accumulate.
 Two things it does not do: scroll position resets (it is a real reload, and a ~4MB WASM page takes a few
 seconds to come back), and it matches on the exact URL — so keep overwriting the *same* preview path
 rather than writing `preview2.html`.
+
+### Showing it on the user's own machine (Windows)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "$HOME\live-editor-work\chrome-reload.ps1" C:\full\path\preview.html
+```
+
+Finds `chrome.exe` in the three usual install locations, normalises the path to `file:///C:/…` (a bare
+`file://C:/…` parses `C:` as a host and is rejected), and opens it. Prints `opened`.
+
+**Tab reuse is macOS-only.** The mac script reads Chrome's tab list through AppleScript and reloads the
+matching tab in place; Windows Chrome has no equivalent hook short of opening a remote-debugging port on
+the user's everyday profile, which is not a price worth paying to refresh a preview. So on Windows a
+rebuild opens another tab. That is what the **build stamp** is for — the preview writes its build time into
+the tab title (`문서명 · 14:22:54`) and into the toolbar badge, so the newest tab is identifiable at a
+glance and stale ones are obvious. Tell the user they can also just press F5 on the tab they already have;
+same result, no new tab. Close the extras when they pile up.
+
+If Chrome isn't found the script falls back to the default browser and says so — on Edge the engine-backed
+buttons (저장, rhwp) don't work, so the fallback message matters; pass it on rather than swallowing it.
 
 ### Delivering it onto a Windows/macOS machine — read this before choosing a folder
 

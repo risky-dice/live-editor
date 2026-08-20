@@ -684,9 +684,16 @@ async function selfTest(keep) {
   check('hanvas — 자립형 스튜디오 HTML', () => {
     const py = pjoin(pdirname(SELF), 'hanvas.py');
     if (!existsSync(py)) return { ok: true, detail: '건너뜀(hanvas.py 없음)' };
+    // 윈도우에는 python3 가 없고 python / py 만 있는 경우가 흔하다. 먼저 도는 걸 쓴다.
+    const pys = process.platform === 'win32' ? ['python', 'py', 'python3'] : ['python3', 'python'];
+    let py3 = null;
+    for (const cand of pys) {
+      try { execFileSync(cand, ['-c', 'pass'], { stdio: 'ignore', timeout: 20000 }); py3 = cand; break; } catch {}
+    }
+    if (!py3) return { ok: true, detail: '건너뜀(python 없음)' };
     let r;
     try {
-      r = execFileSync('python3', [py, src, P('studio.html'), '', JSON.stringify(['이용선'])], {
+      r = execFileSync(py3, [py, src, P('studio.html'), '', JSON.stringify(['이용선'])], {
         cwd: process.cwd(), encoding: 'utf-8', timeout: 180000, stdio: ['ignore', 'pipe', 'pipe'],
       });
     } catch (e) { return { ok: false, detail: String(e?.stderr || e?.message || e).slice(0, 90) }; }

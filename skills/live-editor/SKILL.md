@@ -70,7 +70,7 @@ something subtly different from what was asked.
 ## One-time setup per session
 
 ```bash
-mkdir -p ~/live-editor-work && cp <skill-dir>/scripts/*.mjs <skill-dir>/scripts/package.json <skill-dir>/scripts/*.py <skill-dir>/scripts/requirements.txt ~/live-editor-work/
+mkdir -p ~/live-editor-work && cp <skill-dir>/scripts/*.mjs <skill-dir>/scripts/package.json <skill-dir>/scripts/*.py <skill-dir>/scripts/requirements.txt <skill-dir>/scripts/*.sh ~/live-editor-work/ && chmod +x ~/live-editor-work/*.sh
 cd ~/live-editor-work
 npm install                                    # kordoc + @rhwp/core + cfb, ~40–70s (only needed for hwp/hwpx)
 pip install pymupdf --break-system-packages    # only needed for pdf
@@ -220,6 +220,26 @@ not a second file: it's "the preview you already have — download it and open i
 rhwp and 정리 buttons come alive." Rebuild it with the user's work folder as the 3rd argument if you know
 it (`python3 hanvas.py work.hwpx preview.html "C:/Users/NAME/Downloads/작업"`), which turns on the
 one-click "open in rhwp Chrome extension" handoff.
+
+### Showing it on the user's own machine (macOS) — reuse the tab, never re-`open`
+
+`open -a "Google Chrome" preview.html` opens a **new tab every time**. Rebuild the preview four times in a
+session and the user has four tabs of the same document, is looking at a stale one, and loses their place
+on every refresh. Use the shipped script instead:
+
+```bash
+~/live-editor-work/chrome-reload.sh /absolute/path/preview.html
+```
+
+It finds the tab already showing that `file://` URL and reloads it in place, closes any duplicates it finds
+(keeping the first), and only opens a new tab when none exists. Prints `reloaded`, `reloaded (중복 탭 N개
+닫음)`, or `opened`. macOS only — it drives Chrome through AppleScript, so the first run may raise the
+one-time Automation permission prompt; if the user declines, fall back to `open -a` and say tabs will
+accumulate.
+
+Two things it does not do: scroll position resets (it is a real reload, and a ~4MB WASM page takes a few
+seconds to come back), and it matches on the exact URL — so keep overwriting the *same* preview path
+rather than writing `preview2.html`.
 
 ### Delivering it onto a Windows/macOS machine — read this before choosing a folder
 

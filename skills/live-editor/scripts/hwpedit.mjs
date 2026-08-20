@@ -124,10 +124,13 @@ function renderPages(doc, tokens = []) {
   const pages = []; let failed = 0;
   const hits = new Set();
   let overlaps = 0, overlapPages = 0;
+  let clipped = 0, clippedPages = 0;
   for (let p = 0; p < n; p++) {
     try {
       let s = doc.renderPageSvg(p);
       if (s && s.length > 80) {
+        const uc = unclipCells(s);
+        if (uc.rescued) { s = uc.svg; clipped += uc.rescued; clippedPages++; }
         const g = parseGlyphs(s);
         const o = overlapCount(g);
         if (o >= 4) { overlaps += o; overlapPages++; }
@@ -144,6 +147,7 @@ function renderPages(doc, tokens = []) {
   const missed = tokens.filter(t => t && !hits.has(String(t).replace(/\s+/g, '')));
   if (tokens.length && missed.length) warnings.push(`미리보기에서 형광 표시를 찾지 못한 부분이 있어요(${missed.join(', ')}). 편집 자체는 적용됐으니 깔끔 뷰나 파일로 확인하세요.`);
   if (overlapPages) warnings.push(`표 셀 안에 줄바꿈이 있는 곳(${overlapPages}쪽에서 약 ${overlaps}자)이 원본 뷰에서 글자가 겹쳐 보입니다 — 렌더 엔진 한계이고 문서나 편집 결과에는 이상이 없어요. 그 부분은 깔끔 뷰나 내려받은 파일로 확인하세요.`);
+  if (clippedPages) warnings.push(`셀 높이보다 글이 길어 원본 뷰에서 잘려 안 보이던 곳(${clippedPages}쪽에서 약 ${clipped}자)을 셀 밖까지 보이도록 폈어요 — 그 칸은 아래 줄과 살짝 겹쳐 보일 수 있어요. 정확한 배치는 깔끔 뷰나 내려받은 파일로 확인하세요.`);
   if (!pages.length) warnings.push('렌더된 페이지가 없어요 — 이미지 전용이거나 빈 문서일 수 있어요. 깔끔 뷰(render의 HTML 뷰)로 내용을 확인하세요.');
   return { pages, total };
 }
@@ -273,6 +277,39 @@ function overlapCount(glyphs) {
     else if (prev !== ch) n++;
   }
   return n;
+}
+
+// rhwp는 셀마다 clipPath를 깔고 그 안에 내용을 그린다. 저장된 셀 높이보다 글이 길면 넘친 줄이
+// clip 밖으로 나가 화면에서 사라진다 — 한/글은 셀을 늘려 보여주는 자리인데 여기선 그냥 잘린다.
+// 문서에는 멀쩡히 있는 글자가 미리보기에서만 없어지는 셈이라, 교정용으로는 겹침보다 더 나쁘다
+// (겹침은 이상한 게 보이기라도 하지, 이건 빈 칸으로 보인다). 넘친 셀의 clip 높이만 글이 들어갈
+// 만큼 늘려 준다 — 가로 클립은 그대로 두고, 안 넘친 셀은 건드리지 않는다.
+function unclipCells(svgStr) {
+  const clipRe = /<clipPath id="(cell-clip-[^"]+)"><rect x="([-\d.]+)" y="([-\d.]+)" width="([-\d.]+)" height="([-\d.]+)"/g;
+  const clips = new Map();
+  let m;
+  while ((m = clipRe.exec(svgStr))) clips.set(m[1], { y: parseFloat(m[3]), h: parseFloat(m[5]), need: 0 });
+  if (!clips.size) return { svg: svgStr, rescued: 0 };
+  let rescued = 0;
+  const gRe = /<g clip-path="url\(#(cell-clip-[^)]+)\)">([\s\S]*?)<\/g>/g;
+  while ((m = gRe.exec(svgStr))) {
+    const c = clips.get(m[1]);
+    if (!c) continue;
+    const bottom = c.y + c.h;
+    let over = 0, maxY = 0;
+    for (const g of parseGlyphs(m[2])) {
+      if (!g.text.trim()) continue;
+      const gb = g.y + g.fontSize * 0.25;   // baseline + 디센더 여유
+      if (gb > bottom + 1) { over++; if (gb > maxY) maxY = gb; }
+    }
+    if (over) { rescued += over; c.need = Math.max(c.need, maxY - bottom + 2); }
+  }
+  if (!rescued) return { svg: svgStr, rescued: 0 };
+  const svg = svgStr.replace(clipRe, (full, id, x, y, w, h) => {
+    const c = clips.get(id);
+    return (c && c.need) ? full.replace(`height="${h}"`, `height="${(parseFloat(h) + c.need).toFixed(4)}"`) : full;
+  });
+  return { svg, rescued };
 }
 
 // 바뀐 토큰 문자열을 순서대로 이어붙여 찾아서, 그 글자들 밑에 반투명 사각형을 깔아준다(mix-blend-mode:multiply

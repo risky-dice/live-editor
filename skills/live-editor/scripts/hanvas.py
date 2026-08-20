@@ -5,7 +5,8 @@ rhwp.js (full editing engine) + rhwp_bg.wasm (gzip+base64) + current document (b
 + UI (pages, find/replace, download, file open, pdf.js preview for PDFs).
 Everything runs client-side in the artifact window. No server, no API.
 """
-import base64, gzip, os, re, json, sys, subprocess, tempfile
+import base64, gzip, os, re, json, sys, subprocess, tempfile, zipfile
+from datetime import datetime
 
 # usage: python3 hanvas.py <in.hwpx> <out.html> [downloads_dir] ['["바뀐문자열", …]']
 #   downloads_dir 예: /Users/USERNAME/Downloads  — 주면 "rhwp로 열기" 원클릭 연동 버튼 활성화
@@ -18,6 +19,12 @@ CHANGED = sys.argv[4] if len(sys.argv) > 4 else ""
 HERE = os.getcwd()   # ~/live-editor-work (npm install 완료 상태)
 RHWP_DIR = os.path.join(HERE, "node_modules/@rhwp/core")
 DOC_NAME = os.path.basename(IN_HWPX)
+
+# 크롬 탭은 그대로 둔 채 파일만 다시 굽는 일이 잦다. 지금 보고 있는 페이지가 방금 구운 것인지
+# 눈으로 바로 알 수 있어야 "고쳤는데 그대로다"를 서로 헷갈리지 않는다.
+_BUILT = datetime.now()
+BUILD_STAMP = _BUILT.strftime("%H:%M:%S")
+BUILD_FULL = _BUILT.strftime("%Y-%m-%d %H:%M:%S")
 
 rhwp_js = open(os.path.join(RHWP_DIR, "rhwp.js"), encoding="utf-8").read()
 # WASM is embedded gzipped (7MB -> 2.5MB) and inflated in-browser with
@@ -33,9 +40,40 @@ tmp = tempfile.NamedTemporaryFile(suffix=".json", delete=False)
 _cmd = ["node", os.path.join(HERE, "hwpedit.mjs"), "prerender", IN_HWPX, tmp.name]
 if CHANGED:
     _cmd.append(CHANGED)
-subprocess.run(_cmd, check=True, capture_output=True)
+_run = subprocess.run(_cmd, check=True, capture_output=True)
 _pre = json.load(open(tmp.name, encoding="utf-8"))
 os.unlink(tmp.name)
+
+# prerender가 낸 경고를 여기서 삼키면(예전 동작) "겹쳐 보인다", "잘려 안 보인다" 같은 신호가
+# 미리보기를 만드는 쪽에 아무것도 안 남는다. 실제로 그 때문에 사용자가 먼저 발견해야 했다.
+WARNINGS = []
+try:
+    WARNINGS += (json.loads(_run.stdout.decode("utf-8", "replace") or "{}").get("warnings") or [])
+except Exception:
+    pass
+
+
+def _has_lineseg(path):
+    """한/글이 저장한 줄 배치 기록이 문서에 남아 있는지."""
+    try:
+        with zipfile.ZipFile(path) as z:
+            for n in z.namelist():
+                if n.startswith("Contents/section") and n.endswith(".xml"):
+                    if b"linesegarray" in z.read(n):
+                        return True
+    except Exception:
+        return True          # 못 열면 판단하지 않는다 — 거짓 경고보다 침묵이 낫다
+    return False
+
+
+# linesegarray는 한/글이 계산해 둔 줄 배치다. 이게 있으면 엔진이 한/글과 같은 자리에 줄을 놓고,
+# 없으면 엔진이 스스로 다시 계산해서 한/글 화면과 어긋난다(셀 넘침·줄바꿈 차이). kordoc apply를
+# 거친 문서는 이 기록이 통째로 사라지므로, 조용히 두면 "원본 뷰가 왜 다르냐"의 답을 아무도 모른다.
+if not _has_lineseg(IN_HWPX):
+    WARNINGS.append(
+        "이 문서에는 한/글이 저장해 둔 줄 배치 기록(linesegarray)이 없어요 — 원본 뷰는 엔진이 다시 "
+        "계산한 근사라 셀 넘침이나 줄바꿈이 한/글 화면과 다를 수 있어요. 한/글에서 한 번 열었다 저장하면 "
+        "기록이 복원되고 렌더가 한/글과 같아집니다.")
 # 통째로 gzip+base64 (수 MB -> 수백 KB). base64라 </script> 이스케이프도 불필요.
 prerendered_gz_b64 = base64.b64encode(
     gzip.compress(json.dumps(_pre["svgs"]).encode("utf-8"), 9)).decode()
@@ -47,6 +85,16 @@ APP_JS = r"""
 const $ = s => document.querySelector(s);
 const statusEl = $('#status'), pagesEl = $('#pages');
 function status(msg) { statusEl.textContent = msg; }
+
+// 빌드 시각을 배지와 탭 제목 양쪽에 박는다. 탭 제목에도 넣는 이유는, 탭을 열지 않고
+// 제목만 봐도 방금 구운 판인지 알 수 있어야 하기 때문이다.
+(function stampBuild() {
+  try {
+    const b = document.getElementById('build');
+    if (b) { b.textContent = HANVAS_BUILD; b.title = '빌드 ' + HANVAS_BUILD_FULL; }
+    document.title = HANVAS_DOC_NAME + ' · ' + HANVAS_BUILD;
+  } catch (e) {}
+})();
 
 function b64ToBytes(b64) {
   const bin = atob(b64);
@@ -199,7 +247,7 @@ async function renderAll(visibleFirst) {
     if (my !== renderToken) return;
     const i = order[k];
     try {
-      const svg = (hlMode && hlSvgs && hlSvgs[i]) ? hlSvgs[i] : doc.renderPageSvg(i);
+      const svg = unclipCells((hlMode && hlSvgs && hlSvgs[i]) ? hlSvgs[i] : doc.renderPageSvg(i));
       const el = pagesEl.children[i];
       el.innerHTML = svg;
       const s = el.querySelector('svg');
@@ -208,6 +256,49 @@ async function renderAll(visibleFirst) {
     status(`렌더링 ${k+1}/${n}`);
   }
   status(`${n}페이지 · ${(performance.now()-t0)/1000 < 0.1 ? '' : Math.round((performance.now()-t0)/100)/10 + 's · '}준비 완료`);
+}
+
+// 원본 뷰를 크롬에서 볼 때는 구워둔 페이지가 아니라 엔진이 그 자리에서 그린 SVG가 들어온다
+// (hlSvgs 가 있을 때만 구운 걸 쓴다). 그래서 빌드 때 hwpedit.mjs 가 펴 준 셀 클립이 여기엔 없다 —
+// 같은 손질을 브라우저에서도 한 번 더 해야 잘려 안 보이던 글자가 크롬에서도 보인다.
+// 넘친 셀의 clip 높이만 늘리고, 안 넘친 셀과 이미 펴진 페이지는 그대로 통과시킨다.
+function unclipCells(svgStr) {
+  if (!svgStr || svgStr.indexOf('cell-clip-') < 0) return svgStr;
+  const clipRe = /<clipPath id="(cell-clip-[^"]+)"><rect x="[-\d.]+" y="([-\d.]+)" width="[-\d.]+" height="([-\d.]+)"/g;
+  const clips = new Map();
+  let m;
+  while ((m = clipRe.exec(svgStr))) clips.set(m[1], { y: parseFloat(m[2]), h: parseFloat(m[3]), need: 0 });
+  if (!clips.size) return svgStr;
+  const gRe = /<g clip-path="url\(#(cell-clip-[^)]+)\)">/g;
+  let any = false;
+  while ((m = gRe.exec(svgStr))) {
+    const c = clips.get(m[1]);
+    if (!c) continue;
+    let d = 1, i = m.index + m[0].length, j = svgStr.length;
+    const tagRe = /<(\/?)g\b/g; tagRe.lastIndex = i;
+    let t;
+    while ((t = tagRe.exec(svgStr))) { d += t[1] ? -1 : 1; if (d === 0) { j = t.index; break; } }
+    const body = svgStr.slice(i, j), bottom = c.y + c.h;
+    const txtRe = /<text\s+([^>]*)>([^<]*)<\/text>/g;
+    let g, maxY = 0;
+    while ((g = txtRe.exec(body))) {
+      if (!g[2].trim()) continue;
+      const a = g[1];
+      const ya = /\by="([-\d.]+)"/.exec(a);
+      const tr = /translate\(\s*[-\d.]+\s*,\s*([-\d.]+)\s*\)/.exec(a);
+      const y = ya ? parseFloat(ya[1]) : (tr ? parseFloat(tr[1]) : NaN);
+      if (!isFinite(y)) continue;
+      const fs = /font-size="([\d.]+)"/.exec(a);
+      const gb = y + (fs ? parseFloat(fs[1]) : 16) * 0.25;   // baseline + 디센더 여유
+      if (gb > bottom + 1 && gb > maxY) maxY = gb;
+    }
+    if (maxY) { c.need = Math.max(c.need, maxY - bottom + 2); any = true; }
+  }
+  if (!any) return svgStr;
+  return svgStr.replace(clipRe, function (full, id, y, h) {
+    const c = clips.get(id);
+    return (c && c.need) ? full.replace('height="' + h + '"', 'height="' + (parseFloat(h) + c.need).toFixed(4) + '"') : full;
+  });
 }
 
 // ---------- clean view: unzip current hwpx in-browser + XML -> readable HTML ----------
@@ -603,7 +694,7 @@ HTML_HEAD = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
   #cleanview p { font-size:15px; line-height:1.8; margin:0 0 10px; }
 </style></head><body>
 <div id="topbar">
-  <b>Hanvas</b><span class="ver">v1.0</span>
+  <b>Hanvas</b><span class="ver">v1.0</span><span class="ver" id="build" title=""></span>
   <label class="ibtn" data-tip="파일 열기 (hwp / hwpx / pdf)">
     <svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
     <input id="fileInput" type="file" accept=".hwp,.hwpx,.pdf" style="display:none">
@@ -651,6 +742,8 @@ out = (HTML_HEAD
        + "const DOC_B64 = \"" + doc_b64 + "\";\n"
        + "const HANVAS_DOWNLOADS = " + json.dumps(DOWNLOADS) + ";\n"
        + "const HANVAS_DOC_NAME = " + json.dumps(DOC_NAME) + ";\n"
+       + "const HANVAS_BUILD = " + json.dumps(BUILD_STAMP) + ";\n"
+       + "const HANVAS_BUILD_FULL = " + json.dumps(BUILD_FULL) + ";\n"
        + "const PRERENDERED_GZ_B64 = \"" + prerendered_gz_b64 + "\";\n"
        + "const CLEAN_GZ_B64 = \"" + clean_gz_b64 + "\";\n"
        + "const HAS_HL = " + ("true" if CHANGED else "false") + ";\n"
@@ -660,3 +753,7 @@ out = (HTML_HEAD
 path = OUT_HTML
 open(path, "w", encoding="utf-8").write(out)
 print("written:", path, len(out), "bytes")
+for _w in WARNINGS:
+    print("warning:", _w, file=sys.stderr)
+print(json.dumps({"ok": True, "out": path, "bytes": len(out),
+                  "build": BUILD_FULL, "warnings": WARNINGS}, ensure_ascii=False))

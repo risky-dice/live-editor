@@ -76,7 +76,7 @@ npm install                                    # kordoc + @rhwp/core + cfb, ~40�
 pip install pymupdf --break-system-packages    # only needed for pdf
 ```
 
-Versions in `package.json` are pinned exactly (`kordoc 4.2.0`, `@rhwp/core 0.7.19`, `cfb 1.2.2`) — these are
+Versions in `package.json` are pinned exactly (`kordoc 4.2.0`, `@rhwp/core 0.8.4`, `cfb 1.2.2`) — these are
 the versions the recipes here were verified against, and `@rhwp/core` in particular ships breaking render
 changes on a weekly cadence. Do not loosen them to `^`. If a newer version is already installed, the tools
 still run but emit a `warnings` entry naming the mismatch; if rendering or cell editing then misbehaves,
@@ -166,9 +166,18 @@ anymore — reach for them only when you need a cheap intermediate render for yo
   it writes is scratch — the preview the user sees is rebuilt in the step below.
 
 - **Structural batch edits (filling many specific cells by row/col, whole-block rewrites)** → use the
-  kordoc **block-based `apply`** below. One rule learned the hard way: **never put `\n` inside a cell's
-  `text`** — join lines with spaces instead. Multi-paragraph cells created by XML patching render with
-  overlapping glyphs in the rhwp SVG preview (the document itself stays valid; it's a preview-layer bug).
+  kordoc **block-based `apply`** below — but know what it costs. One rule learned the hard way: **never
+  put `\n` inside a cell's `text`** — join lines with spaces instead. Multi-paragraph cells created by XML
+  patching render with overlapping glyphs in the rhwp SVG preview (the document itself stays valid; it's a
+  preview-layer bug).
+
+  **`apply` erases the whole document's `linesegarray`.** Measured: a one-cell edit took a document from
+  1,387 stored lines to 0, while the same edit through `edit` kept all 1,387. That record is 한/글's own
+  line layout, and losing it permanently downgrades every later 원본 뷰 of that file to an engine-recomputed
+  approximation — cells overflow, line breaks drift. So **prefer `edit` even for several point edits**, and
+  reach for `apply` only when the edit really is row/col structural. When you do use it, tell the user in
+  one line that the 원본 뷰 becomes approximate and that opening the file once in 한/글 and saving restores
+  the layout record.
 
 - Paragraph/heading: `{"blockIndex": N, "newText": "<full new text>"}` (entire new block text, not a delta).
 - Table cell: `{"blockIndex": N, "cells": [{"row": R, "col": C, "text": "<new cell text>"}]}`.
@@ -299,7 +308,7 @@ error box for a missing engine; that path is a bug if you see it.
 | `node hwpedit.mjs render <in.hwpx> <out.html>` | Block-based preview + block list. Fast (~0.2s, no WASM), table-safe. Used for the block map, not the visible preview. |
 | `node hwpedit.mjs edit <in.hwpx> <out.hwpx> <out.html> '<findReplaceJSON>'` | **Engine-based find/replace (preferred for point edits).** rhwp editing API — layout recomputed with the edit, no glyph-overlap risk. `[{"find":"…","replace":"…","all":true?}]`. Writes highlighted SVG preview directly; prints `{ok, applied, skipped, pages}`. |
 | `node hwpedit.mjs apply <in.hwpx> <out.hwpx> <out.html> '<editsJSON>'` | Apply edits → new hwpx + scratch preview; prints `{ok, applied, stats, changed, blocks}`. Feed `changed` into the `hanvas.py` rebuild. |
-| `python3 hanvas.py <in.hwpx> <out.html> [workDir] ['<changedJSON>']` | **The preview. The only one you show.** ~4MB self-contained HTML: 원본 뷰 ↔ 깔끔 뷰 toggle, both pre-rendered and highlighted at build time, plus a 형광 toggle so the highlights survive in Chrome too, plus the embedded WASM engine for hwpx save, rhwp hand-off and 수정본 정리; auto view-only (buttons hidden, banner shown) where CSP blocks WASM. 3rd arg = the folder the rhwp hand-off opens from — use a **subfolder** of Downloads, never Downloads itself; `''` if unknown (rhwp button hides). 4th arg = changed-token array → fluorescent highlight in both views, in both engine and view-only modes. |
+| `python3 hanvas.py <in.hwpx> <out.html> [workDir] ['<changedJSON>']` | **The preview. The only one you show.** Prints a JSON line (`ok`, `out`, `bytes`, `build`, `warnings`) — read the `warnings`, they carry the overlap/clip/`linesegarray` findings that used to be swallowed here. Stamps the build time into the toolbar badge and the tab title so a stale tab is obvious. ~4MB self-contained HTML: 원본 뷰 ↔ 깔끔 뷰 toggle, both pre-rendered and highlighted at build time, plus a 형광 toggle so the highlights survive in Chrome too, plus the embedded WASM engine for hwpx save, rhwp hand-off and 수정본 정리; auto view-only (buttons hidden, banner shown) where CSP blocks WASM. 3rd arg = the folder the rhwp hand-off opens from — use a **subfolder** of Downloads, never Downloads itself; `''` if unknown (rhwp button hides). 4th arg = changed-token array → fluorescent highlight in both views, in both engine and view-only modes. |
 | `node hwpedit.mjs prerender <in.hwpx> <out.json> ['<changedJSON>']` | What `hanvas.py` calls internally: `{svgs:[…], clean:"…"}`, highlighted. You rarely call it directly. |
 | `node hwpedit.mjs svg <in.hwpx> <out.html> ['<changedJSON>']` | Raw full-fidelity SVG pages, works on `.hwpx` and raw `.hwp`. ~1–2s. Optional 3rd arg = changed substrings → highlight rect under every occurrence. |
 | `node hwpedit.mjs test [--keep]` | Self-test (25 checks): generates a sample doc and runs every command — including the `hanvas.py` build and its engine-less fallback — plus every error path; pass/fail table to stderr, `{ok,passed,failed,results}` to stdout. Run after setup in an unfamiliar environment. |
@@ -396,6 +405,13 @@ cells that should all change together), and re-zip preserving each entry's origi
   special install needed.
 - `apply` returns `{"ok":false, ...}` → read the skip reason (usually implied insert/delete, or a wrong
   block index) before retrying or asking the user to clarify.
+- **`linesegarray` is what makes the 원본 뷰 match 한/글.** It's the line layout 한/글 computed and stored:
+  where every line breaks and how tall it is. With it present the engine puts lines exactly where 한/글 put
+  them (measured: the source document rendered with zero clipped text); with it gone the engine recomputes
+  and drifts (the same document after `apply` clipped 274 characters across 5 pages). `hanvas.py` checks
+  `Contents/section*.xml` for it at build time and warns when it's missing. **The fix is not on our side** —
+  ask the user to open the file once in 한/글 and save; 한/글 rewrites the record and the next render matches.
+  Don't try to reconstruct it, and don't present an approximate 원본 뷰 as if it were 한/글's own.
 - **Password-protected documents can't be opened at all** (detected up front for both HWPX and HWP5, and
   reported as such). There is no workaround from this side — ask the user to remove the password in 한/글
   and re-save. Never ask them for the password.
@@ -406,12 +422,18 @@ cells that should all change together), and re-zip preserving each entry's origi
 - **Very long documents** render the first 300 pages (`HWPEDIT_PAGE_CAP` raises it) and report the cap in
   `warnings`. Never let that truncation go unmentioned — a preview that silently stops at page 300 reads
   as "the document is 300 pages long."
-- **Table cells containing an explicit line break** are drawn by the engine with every line on the same
-  baseline, so "(단원명)⏎(영역명)" comes out as overlapping glyphs ("(단영역원명명)"). Upstream rhwp
-  limitation, present in 0.7.19 and 0.8.0 — the document and the edited output are both fine, only the
-  full-fidelity SVG view is wrong. `svg`/`edit` detect the overlap and attach a `warnings` entry;
-  pass it on and point the user at the clean view or the downloaded file for those cells. Never "fix" the
-  document text to work around a rendering artifact.
+- **Table cells containing an explicit line break** used to be drawn with every line on the same baseline,
+  so "(단원명)⏎(영역명)" came out as overlapping glyphs ("(단영역원명명)"). Present in 0.7.19 and 0.8.0,
+  **fixed upstream by 0.8.4** — measured on a 23-page 운영 계획: the header row went from one crammed
+  baseline to three correct ones. That is why the pin moved. The overlap detector stays in `svg`/`edit`
+  as a regression guard; if it ever fires again, pass the warning on and point at the clean view. Never
+  "fix" the document text to work around a rendering artifact.
+- **Cells whose text is taller than the stored cell height get clipped, not grown.** 한/글 expands the row;
+  the engine draws the overflow outside the cell's `clipPath`, where it is invisible — the cell reads as
+  *empty*, which is worse than the overlap bug because nothing looks wrong. `unclipCells()` (in both
+  `hwpedit.mjs` and the browser half of `hanvas.py`) raises the clip height of just the offending cells so
+  the text comes back, and a `warnings` entry says so; those cells may then sit slightly over the row
+  below. This is a mitigation, not fidelity — see the `linesegarray` entry below for why it happens.
 
 ---
 

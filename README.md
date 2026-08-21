@@ -15,7 +15,7 @@ Claude가 대화 중 자동으로 합니다(세션당 한 번, 40~70초):
 ```bash
 mkdir -p ~/live-editor-work && cp <skill-dir>/scripts/* ~/live-editor-work/
 cd ~/live-editor-work
-npm install                                    # kordoc 4.2.0 + @rhwp/core 0.7.19 + cfb 1.2.2 (hwp/hwpx용)
+npm install                                    # kordoc 4.2.0 + @rhwp/core 0.8.4 + cfb 1.2.2 (hwp/hwpx용)
 pip install pymupdf --break-system-packages    # pdf용
 ```
 

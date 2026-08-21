@@ -19,7 +19,9 @@ if (-not (Test-Path -LiteralPath $Path)) {
 $full = (Resolve-Path -LiteralPath $Path).Path
 
 # file://C:/... 는 C: 를 호스트로 파싱해서 거부당한다. 슬래시 세 개가 필요하다.
-$url = 'file:///' + ($full -replace '\\', '/')
+# 경로에 공백이 있으면 Start-Process 가 URL 을 단어마다 쪼개 엉뚱한 탭을 여러 개 연다.
+# [uri] 로 만들면 슬래시 세 개와 퍼센트 인코딩(공백 -> %20, 한글 포함)을 한 번에 해 준다.
+$url = ([uri]$full).AbsoluteUri
 
 $candidates = @(
   (Join-Path $env:ProgramFiles 'Google\Chrome\Application\chrome.exe'),

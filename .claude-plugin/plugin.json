@@ -1,7 +1,7 @@
 {
   "name": "live-editor",
   "displayName": "실시간 문서 편집 (HWP/HWPX/PDF)",
-  "version": "1.10.0",
+  "version": "1.10.1",
   "description": "한글(HWP/HWPX)과 텍스트 PDF를 대화창 안에서 고친다. 바뀐 자리에 형광펜이 칠해진 미리보기가 즉시 갱신되고 편집된 파일을 그대로 받는다. 외부 API 없이 로컬 엔진(kordoc + rhwp WASM, PyMuPDF)으로 처리한다.",
   "author": {
     "name": "이용선"

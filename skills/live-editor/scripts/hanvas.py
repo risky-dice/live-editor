@@ -8,6 +8,14 @@ Everything runs client-side in the artifact window. No server, no API.
 import base64, gzip, os, re, json, sys, subprocess, tempfile, zipfile
 from datetime import datetime
 
+# 윈도우 콘솔·파이프는 로캘 코드페이지(한국어면 cp949)로 인코딩한다. 경고문과 JSON에 한글이
+# 섞이면 UnicodeEncodeError로 죽거나 깨진 글자가 나가서, 호출한 쪽이 결과를 읽지 못한다.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 # usage: python3 hanvas.py <in.hwpx> <out.html> [downloads_dir] ['["바뀐문자열", …]']
 #   downloads_dir 예: /Users/USERNAME/Downloads  — 주면 "rhwp로 열기" 원클릭 연동 버튼 활성화
 #                     모르면 빈 문자열("")을 주고 4번째 인자만 채워도 된다
@@ -37,6 +45,7 @@ doc_b64 = base64.b64encode(open(IN_HWPX, "rb").read()).decode()
 # 그래서 원본 뷰(SVG)와 깔끔 뷰(블록 HTML)를 빌드 때 미리 렌더해서 같이 심는다. CHANGED가 있으면
 # 형광펜도 이때 칠해 두므로, 편집 후에도 바뀐 자리가 보기 전용 모드에서 그대로 보인다.
 tmp = tempfile.NamedTemporaryFile(suffix=".json", delete=False)
+tmp.close()          # 윈도우는 열린 핸들이 있는 파일을 지우지 못한다(WinError 32)
 _cmd = ["node", os.path.join(HERE, "hwpedit.mjs"), "prerender", IN_HWPX, tmp.name]
 if CHANGED:
     _cmd.append(CHANGED)
@@ -143,7 +152,7 @@ async function showViewerMode() {
   for (let i = 0; i < svgs.length; i++) {
     const d = document.createElement('div');
     d.className = 'page';
-    d.innerHTML = svgs[i];
+    d.innerHTML = nsIds(svgs[i], i);
     const s = d.querySelector('svg');
     if (s) { s.removeAttribute('height'); s.style.width = '100%'; s.style.height = 'auto'; s.style.display = 'block'; }
     pagesEl.appendChild(d);
@@ -249,13 +258,26 @@ async function renderAll(visibleFirst) {
     try {
       const svg = unclipCells((hlMode && hlSvgs && hlSvgs[i]) ? hlSvgs[i] : doc.renderPageSvg(i));
       const el = pagesEl.children[i];
-      el.innerHTML = svg;
+      el.innerHTML = nsIds(svg, i);
       const s = el.querySelector('svg');
       if (s) { s.removeAttribute('height'); s.style.width = '100%'; s.style.height = 'auto'; s.style.display = 'block'; }
     } catch (e) { /* keep placeholder */ }
     status(`렌더링 ${k+1}/${n}`);
   }
   status(`${n}페이지 · ${(performance.now()-t0)/1000 < 0.1 ? '' : Math.round((performance.now()-t0)/100)/10 + 's · '}준비 완료`);
+}
+
+// 여러 쪽 SVG를 한 문서에 나란히 심으면 clipPath 같은 내부 id가 쪽끼리 충돌한다.
+// url(#id) 는 문서에서 먼저 나온 정의를 잡으므로, 뒷쪽 페이지의 셀이 앞쪽 페이지의 엉뚱한
+// 사각형으로 잘려 글자도 배경도 통째로 사라진다(1쪽만 멀쩡하고 2쪽부터 표 머리글이 빈 칸).
+// 쪽 번호를 접두사로 붙여 이름 공간을 갈라 준다.
+function nsIds(svgStr, page) {
+  if (!svgStr) return svgStr;
+  const p = 'p' + page + '-';
+  return svgStr
+    .replace(/\sid="([^"]+)"/g, ' id="' + p + '$1"')
+    .replace(/url\(#([^)]+)\)/g, 'url(#' + p + '$1)')
+    .replace(/(xlink:href|href)="#([^"]+)"/g, '$1="#' + p + '$2"');
 }
 
 // 원본 뷰를 크롬에서 볼 때는 구워둔 페이지가 아니라 엔진이 그 자리에서 그린 SVG가 들어온다

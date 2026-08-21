@@ -92,7 +92,7 @@ async function openDoc(bytes, label = '문서') {
 }
 
 // ---- rhwp 엔진 (지연 로드 + 가드 + 버전 확인) ----
-const PINNED_RHWP = '0.7.19';
+const PINNED_RHWP = '0.8.4';
 let _rhwp;
 async function loadRhwp(feature = '이 기능') {
   if (_rhwp) return _rhwp;
